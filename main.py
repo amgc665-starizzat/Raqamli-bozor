@@ -2,10 +2,16 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+from passlib.context import CryptContext
+import jwt
 
-app = FastAPI(title="OLX Nuasxa API", description="E'lonlar va reklama platformasi uchun backend")
+app = FastAPI(title="Raqamli Bozor API", description="E'lonlar va foydalanuvchilar platformasi")
 
-# Ma'lumotlar modeli (Ma'lumotlar bazasi o'rniga hozircha vaqtinchalik xotira)
+# Parollarni xavfsiz shifrlash va xavfsizlik kaliti
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+SECRET_KEY = "RaqamliBozorMaxfiyKaliti"
+
+# ---- MA'LUMOTLAR ANDOZALARI (MODELS) ----
 class Elon(BaseModel):
     id: int
     sarlavha: str
@@ -18,54 +24,72 @@ class Elon(BaseModel):
     rasm_url: Optional[str] = None
     yaratilgan_vaqt: datetime = datetime.now()
 
-# Vaqtinchalik ma'lumotlar bazasi (Buni keyinchalik PostgreSQL yoki MongoDB ga ulash kerak)
+class UserRegister(BaseModel):
+    username: str
+    password: str
+    telefon: str
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+# ---- VAQTINCHALIK MA'LUMOTLAR BAZASI ----
 elonlar_bazasi: List[Elon] = [
     {
         "id": 1,
         "sarlavha": "iPhone 15 Pro Max sotiladi",
-        "tavsif": "Holati ideal, 256GB, rangi Natural Titanium. Karobka-dokument bor.",
+        "tavsif": "Holati ideal, 256GB, rangi Natural Titanium.",
         "narx": 12000000,
         "valyuta": "UZS",
         "kategoriya": "Elektronika",
-        "manzil": "Toshkent shahar, Chilonzor",
+        "manzil": "Toshkent shahar",
         "telefon": "+998901234567",
         "rasm_url": "https://example.com/iphone15.jpg",
         "yaratilgan_vaqt": datetime.now()
     }
 ]
 
-# 1. Barcha e'lonlarni olish (Kategoriya bo'yicha saralash filtri bilan)
-@app.get("/elonlar/", response_model=List[Elon])
+foydalanuvchilar_bazasi = []
+
+# ---- FOYDALANUVCHILAR TIZIMI (AUTH) ----
+@app.post("/register", summary="Yangi foydalanuvchi ro'yxatdan o'tkazish")
+def register_user(user: UserRegister):
+    for u in foydalanuvchilar_bazasi:
+        if u["username"] == user.username:
+            raise HTTPException(status_code=400, detail="Bu foydalanuvchi nomi allaqachon band!")
+    
+    hashed_password = pwd_context.hash(user.password)
+    yangi_user = {
+        "username": user.username,
+        "password": hashed_password,
+        "telefon": user.telefon
+    }
+    foydalanuvchilar_bazasi.append(yangi_user)
+    return {"message": "Siz muvaffaqiyatli ro'yxatdan o'tdingiz! 🥳"}
+
+@app.post("/login", summary="Tizimga kirish va Token olish")
+def login_user(user: UserLogin):
+    foydalanuvchi = None
+    for u in foydalanuvchilar_bazasi:
+        if u["username"] == user.username:
+            foydalanuvchi = u
+            break
+            
+    if not foydalanuvchi or not pwd_context.verify(user.password, foydalanuvchi["password"]):
+        raise HTTPException(status_code=400, detail="Username yoki parol xato!")
+    
+    token = jwt.encode({"sub": user.username}, SECRET_KEY, algorithm="HS256")
+    return {"access_token": token, "token_type": "bearer", "message": "Xush kelibsiz!"}
+
+# ---- E'LONLAR TIZIMI ----
+@app.get("/elonlar/", response_model=List[Elon], summary="Barcha e'lonlarni ko'rish")
 def barcha_elonlar(kategoriya: Optional[str] = None):
     if kategoriya:
-        filtr_elonlar = [e for e in elonlar_bazasi if e["kategoriya"].lower() == kategoriya.lower()]
-        return filtr_elonlar
+        filtrlangan = [e for e in elonlar_bazasi if e["kategoriya"].lower() == kategoriya.lower()]
+        return filtrlangan
     return elonlar_bazasi
 
-# 2. Bitta e'lonni ID bo'yicha olish
-@app.get("/elonlar/{elon_id}", response_model=Elon)
-def bitta_elon(elon_id: int):
-    for elon in elonlar_bazasi:
-        if elon["id"] == elon_id:
-            return elon
-    raise HTTPException(status_code=404, detail="E'lon topilmadi")
-
-# 3. Yangi e'lon qo'shish
-@app.post("/elonlar/yaratish/", response_model=Elon)
+@app.post("/elonlar/yaratish/", summary="Yangi e'lon qo'shish")
 def elon_yaratish(yangi_elon: Elon):
-    # ID takrorlanmasligini tekshirish
-    for elon in elonlar_bazasi:
-        if elon["id"] == yangi_elon.id:
-            raise HTTPException(status_code=400, detail="Bu ID dagi e'lon allaqachon mavjud")
-    
     elonlar_bazasi.append(yangi_elon.dict())
-    return yangi_elon
-
-# 4. E'lonni o'chirish
-@app.delete("/elonlar/ochirish/{elon_id}")
-def elon_ochirish(elon_id: int):
-    for index, elon in enumerate(elonlar_bazasi):
-        if elon["id"] == elon_id:
-            elonlar_bazasi.pop(index)
-            return {"xabar": "E'lon muvaffaqiyatli o'chirildi"}
-    raise HTTPException(status_code=404, detail="E'lon topilmadi")
+    return {"message": "E'lon muvaffaqiyatli joylashtirildi!", "elon": yangi_elon}
