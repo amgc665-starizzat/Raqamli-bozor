@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 app = FastAPI(title="Raqamli Bozor API", description="E'lonlar va foydalanuvchilar platformasi")
 
-# ---- HAQIQIY O'CHMAS MONGODB BAZASIGA ULANISH ----
+# ---- MONGODB BAZASIGA ULANISH ----
 MONGO_URL = "mongodb+srv://izzat:izzat2008@cluster0.o3bsglh.mongodb.net/?appName=Cluster0"
 client = AsyncIOMotorClient(MONGO_URL)
 db = client["raqamli_bozor_db"]  
@@ -149,7 +149,6 @@ def home_page():
             }
         }
 
-        // PAROL KO'ZCHASI ISHLASHI UCHUN FUNKSHIYA
         function togglePasswordVisibility() {
             const passwordInput = document.getElementById('password');
             const toggleIcon = document.querySelector('.toggle-password');
@@ -181,13 +180,19 @@ def home_page():
         }
 
         async function handleAuth() {
-            const username = document.getElementById('username').value;
+            const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
-            const telefon = document.getElementById('telefon').value;
+            const telefon = document.getElementById('telefon').value.trim();
             const msgBox = document.getElementById('msgBox');
             
             msgBox.style.display = 'none';
             msgBox.className = "message";
+
+            if(!username || !password) {
+                msgBox.innerText = "Hamma maydonlarni to'ldiring!";
+                msgBox.classList.add('error');
+                return;
+            }
 
             const url = isRegisterMode ? '/register' : '/login';
             const bodyData = isRegisterMode ? { username, password, telefon } : { username, password };
@@ -217,7 +222,7 @@ def home_page():
                     msgBox.classList.add('error');
                 }
             } catch (err) {
-                msgBox.innerText = "Server xatosi!";
+                msgBox.innerText = "Server xatosi yoki ulanishda muammo!";
                 msgBox.classList.add('error');
             }
         }
@@ -238,23 +243,23 @@ def home_page():
                 const box = document.getElementById('elonlarRoʻyxati');
                 box.innerHTML = '';
                 
-                if(elonlar.length === 0) {
-                    box.innerHTML = '<p style="color:#999; text-align:center;">Hozircha e'lonlar yo'q. Birinchi bo'lib e'lon joylang!</p>';
+                if(!elonlar || elonlar.length === 0) {
+                    box.innerHTML = '<p style="color:#999; text-align:center;">Hozircha faol elonlar yoq.</p>';
                     return;
                 }
 
                 elonlar.forEach(e => {
                     box.innerHTML += `
                         <div class="elon-card">
-                            <h5 style="font-size:16px; color:#333; font-weight:600;">${e.sarlavha}</h5>
-                            <p style="font-size:14px; color:#666; margin: 6px 0;">${e.tavsif || ''}</p>
-                            <div style="font-size:13px; color:#555;">📞 Tel: ${e.telefon || ''}</div>
-                            <div class="price">${e.narx}</div>
+                            <h5 style="font-size:16px; color:#333; font-weight:600;">\${e.sarlavha}</h5>
+                            <p style="font-size:14px; color:#666; margin: 6px 0;">\${e.tavsif || ''}</p>
+                            <div style="font-size:13px; color:#555;">📞 Tel: \${e.telefon || ''}</div>
+                            <div class="price">\${e.narx}</div>
                         </div>
                     `;
                 });
             } catch (err) {
-                console.error("E'lonlarni yuklashda xato:", err);
+                console.error("Xato:", err);
             }
         }
 
@@ -281,7 +286,7 @@ def home_page():
                 });
 
                 if (response.ok) {
-                    elonMsg.innerText = "E'lon muvaffaqiyatli qo'shildi! ✨";
+                    elonMsg.innerText = "Elon muvaffaqiyatli qoshildi! ✨";
                     elonMsg.className = "message success";
                     document.getElementById('elonSarlavha').value = '';
                     document.getElementById('elonTavsif').value = '';
@@ -289,11 +294,11 @@ def home_page():
                     document.getElementById('elonTel').value = '';
                     loadElonlar();
                 } else {
-                    elonMsg.innerText = "E'lon qo'shishda xatolik yuz berdi.";
+                    elonMsg.innerText = "Xatolik yuz berdi.";
                     elonMsg.className = "message error";
                 }
             } catch (error) {
-                elonMsg.innerText = "Server bilan aloqa yo'q!";
+                elonMsg.innerText = "Server bilan aloqa yoq!";
                 elonMsg.className = "message error";
             }
         }
