@@ -1,21 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from passlib.context import CryptContext
-import jwt
-from datetime import datetime, timedelta
 from typing import Any
 
-app = FastAPI(title="Raqamli Bozor API", description="E'lonlar va foydalanuvchilar platformasi")
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SECRET_KEY = "raqmlibozor"
-ALGORITHM = "HS256"
+app = FastAPI(title="Raqamli Bozor API", description="E'lonlar va foydalanuvchilar platformasi (Injiqliksiz Versiya)")
 
 # Ma'lumotlar bazasi o'rniga vaqtinchalik ro'yxatlar
 users_db = []
 elonlar_db = []
 
-# MUTLAQ ERKIN MODELLAR (Har qanday turni injiqliksiz qabul qiladi)
+# MUTLAQ ERKIN MODELLAR (Har qanday narsani boricha bag'riga bosadi)
 class UserRegister(BaseModel):
     username: Any = None
     password: Any = None
@@ -33,44 +26,36 @@ class Elon(BaseModel):
 
 @app.post("/register", summary="Yangi foydalanuvchi ro'yxatdan o'tkazish")
 def register_user(user: UserRegister):
-    # Agar foydalanuvchi nomi matn bo'lsa, uni bazadan tekshirish
-    if user.username:
-        for u in users_db:
-            if str(u["username"]).strip().lower() == str(user.username).strip().lower():
-                raise HTTPException(status_code=400, detail="Bu foydalanuvchi nomi allaqachon mavjud")
+    # Bo'sh bo'lsa ham, har qanday belgini ham qabul qiladi
+    username_str = str(user.username).strip() if user.username is not None else "user"
     
-    # Parolni xavfsiz matnga o'girib, keyin xeshlaymiz (injiqlik qilmasligi uchun)
-    plain_password = str(user.password) if user.password is not None else "12345"
-    hashed_password = pwd_context.hash(plain_password)
+    for u in users_db:
+        if str(u["username"]).strip().lower() == username_str.lower():
+            raise HTTPException(status_code=400, detail="Bu foydalanuvchi nomi allaqachon mavjud")
     
     new_user = {
         "username": user.username,
-        "password": hashed_password,
+        "password": str(user.password),
         "telefon": user.telefon
     }
     users_db.append(new_user)
     return {"message": "Siz muvaffaqiyatli ro'yxatdan o'tdingiz! 🥳"}
 
-@app.post("/login", summary="Tizimga kirish va Token olish")
+@app.post("/login", summary="Tizimga kirish")
 def login_user(user: UserLogin):
-    db_user = None
     input_username = str(user.username).strip().lower() if user.username is not None else ""
+    input_password = str(user.password) if user.password is not None else ""
     
+    db_user = None
     for u in users_db:
-        if u["username"] and str(u["username"]).strip().lower() == input_username:
+        if str(u["username"]).strip().lower() == input_username:
             db_user = u
             break
             
-    plain_password = str(user.password) if user.password is not None else ""
-    
-    if not db_user or not pwd_context.verify(plain_password, db_user["password"]):
+    if not db_user or str(db_user["password"]) != input_password:
         raise HTTPException(status_code=400, detail="Foydalanuvchi nomi yoki parol xato")
         
-    expire = datetime.utcnow() + timedelta(hours=24)
-    token_data = {"sub": str(user.username), "exp": expire}
-    token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
-    
-    return {"access_token": token, "token_type": "bearer"}
+    return {"message": "Tizimga muvaffaqiyatli kirdingiz! 🔓", "username": user.username}
 
 @app.get("/elonlar/", summary="Barcha e'lonlarni ko'rish")
 def get_elonlar():
