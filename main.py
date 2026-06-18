@@ -15,19 +15,19 @@ users_db = []
 elonlar_db = []
 
 class UserRegister(BaseModel):
-    username: str
-    password: str
-    telefon: str
+    username: any
+    password: any
+    telefon: any
 
 class UserLogin(BaseModel):
-    username: str
-    password: str
+    username: any
+    password: any
 
 class Elon(BaseModel):
-    sarlavha: str
-    tavsif: str
-    narx: float
-    telefon: str
+    sarlavha: any
+    tavsif: any
+    narx: any
+    telefon: any
 
 @app.post("/register", summary="Yangi foydalanuvchi ro'yxatdan o'tkazish")
 def register_user(user: UserRegister):
