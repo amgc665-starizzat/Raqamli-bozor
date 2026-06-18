@@ -2,34 +2,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Any
-import json
-import os
+from motor.motor_asyncio import AsyncIOMotorClient
 
 app = FastAPI(title="Raqamli Bozor API", description="E'lonlar va foydalanuvchilar platformasi")
 
-# ---- BILANMA-KETIN MA'LUMOTLAR BAZASI (FAYLDA SAQLASH) ----
-USERS_FILE = "users_db.json"
-ELONLAR_FILE = "elonlar_db.json"
-
-def load_data(filename, default_value):
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return default_value
-    return default_value
-
-def save_data(filename, data):
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-# Ma'lumotlarni yuklab olish
-users_db = load_data(USERS_FILE, [])
-elonlar_db = load_data(ELONLAR_FILE, [
-    {"sarlavha": "Chevrolet Gentra", "tavsif": "Yili 2023, holati a'lo, rangi oq", "narx": "13500", "telefon": "+998991234567"},
-    {"sarlavha": "iPhone 15 Pro", "tavsif": "128GB, rangi Natural Titanium, yangi", "narx": "950", "telefon": "+998907654321"}
-])
+# ---- HAQIQIY O'CHMAS MONGODB BAZASIGA ULANISH ----
+MONGO_URL = "mongodb+srv://izzat:izzat2008@cluster0.o3bsglh.mongodb.net/?appName=Cluster0"
+client = AsyncIOMotorClient(MONGO_URL)
+db = client["raqamli_bozor_db"]  # Ma'lumotlar bazasi nomi
+users_collection = db["users"]    # Foydalanuvchilar jadvali
+elonlar_collection = db["elonlar"] # E'lonlar jadvali
 
 class UserRegister(BaseModel):
     username: Any = None
@@ -89,7 +71,6 @@ def home_page():
     </head>
     <body>
 
-    <!-- 1. KIRISH VA RO'YXATDAN O'TISH OYNASI -->
     <div class="container" id="authBox">
         <h2 id="formTitle">Ro'yxatdan O'tish</h2>
         
@@ -116,13 +97,11 @@ def home_page():
         <div class="toggle-link" id="toggleLink" onclick="toggleForm()">Sizda allaqachon profil bormi? Kirish</div>
     </div>
 
-    <!-- 2. ICHKARIDAGI ASOSIY BOZOR SAHIFASI -->
     <div class="main-page" id="marketPage">
         <div class="navbar">
             <h3>🚀 Raqamli Bozor Platformasi</h3>
             <div style="display: flex; align-items: center; gap: 15px;">
                 <div>Salom, <span id="userDisplay" style="font-weight:bold; color:#007bff;"></span>!</div>
-                <!-- Akkauntdan chiqish tugmasi -->
                 <button class="logout-btn" onclick="logout()">Chiqish 🚪</button>
             </div>
         </div>
@@ -160,11 +139,9 @@ def home_page():
     <script>
         let isRegisterMode = true;
 
-        // --- AKKAUNTNI ESDAN CHIQARMAYDIGAN QILISH (AVTO-LOGIN) ---
         window.onload = function() {
             const savedUser = localStorage.getItem('activeUser');
             if (savedUser) {
-                // Agar foydalanuvchi avval kirgan bo'lsa, to'g'ridan-to'g'ri ichkariga o'tkazish
                 document.getElementById('authBox').style.display = 'none';
                 document.getElementById('marketPage').style.display = 'block';
                 document.getElementById('userDisplay').innerText = savedUser;
@@ -226,7 +203,6 @@ def home_page():
                     msgBox.innerText = result.message;
                     msgBox.classList.add('success');
                     
-                    // Brauzer xotirasiga foydalanuvchini yozib qo'yamiz (Akkauntdan chiqib ketmaydi)
                     localStorage.setItem('activeUser', username);
                     
                     setTimeout(() => {
@@ -245,9 +221,8 @@ def home_page():
             }
         }
 
-        // AKKAUNTDAN CHIQISH FUNKSIYASI
         function logout() {
-            localStorage.removeItem('activeUser'); // Xotirani tozalash
+            localStorage.removeItem('activeUser');
             document.getElementById('marketPage').style.display = 'none';
             document.getElementById('authBox').style.display = 'block';
             document.getElementById('username').value = '';
@@ -261,7 +236,7 @@ def home_page():
             const box = document.getElementById('elonlarRoʻyxati');
             box.innerHTML = '';
             
-            elonlar.reverse().forEach(e => {
+            elonlar.forEach(e => {
                 box.innerHTML += `
                     <div class="elon-card">
                         <h5 style="font-size:16px; color:#333;">${e.sarlavha}</h5>
@@ -280,6 +255,12 @@ def home_page():
             const telefon = document.getElementById('elonTel').value;
             const elonMsg = document.getElementById('elonMsg');
 
+            if(!sarlavha || !narx) {
+                elonMsg.innerText = "Sarlavha va narxni yozing!";
+                elonMsg.className = "message error";
+                return;
+            }
+
             const response = await fetch('/elonlar/yaratish/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -292,6 +273,7 @@ def home_page():
                 document.getElementById('elonSarlavha').value = '';
                 document.getElementById('elonTavsif').value = '';
                 document.getElementById('elonNarx').value = '';
+                document.getElementById('elonTel').value = '';
                 loadElonlar();
             } else {
                 elonMsg.innerText = "Xato!";
@@ -305,37 +287,42 @@ def home_page():
     return html_content
 
 @app.post("/register")
-def register_user(user: UserRegister):
+async def register_user(user: UserRegister):
     username_str = str(user.username).strip() if user.username is not None else ""
     if not username_str:
         raise HTTPException(status_code=400, detail="Foydalanuvchi nomini yozing!")
-    for u in users_db:
-        if str(u["username"]).strip().lower() == username_str.lower():
-            raise HTTPException(status_code=400, detail="Bu foydalanuvchi nomi band!")
     
-    users_db.append({"username": user.username, "password": str(user.password), "telefon": user.telefon})
-    save_data(USERS_FILE, users_db) # Faylga saqlash
+    # Bazadan qidirish
+    existing_user = await users_collection.find_one({"username": username_str})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Bu foydalanuvchi nomi band!")
+    
+    new_user = {"username": username_str, "password": str(user.password), "telefon": user.telefon}
+    await users_collection.insert_one(new_user) # MongoDB-ga saqlash
     return {"message": "Muvaffaqiyatli ro'yxatdan o'tdingiz! 🎉"}
 
 @app.post("/login")
-def login_user(user: UserLogin):
-    input_username = str(user.username).strip().lower() if user.username is not None else ""
+async def login_user(user: UserLogin):
+    input_username = str(user.username).strip() if user.username is not None else ""
     input_password = str(user.password) if user.password is not None else ""
-    db_user = None
-    for u in users_db:
-        if str(u["username"]).strip().lower() == input_username:
-            db_user = u
-            break
+    
+    db_user = await users_collection.find_one({"username": input_username})
     if not db_user or str(db_user["password"]) != input_password:
         raise HTTPException(status_code=400, detail="Login yoki parol xato!")
     return {"message": "Tizimga muvaffaqiyatli kirdingiz! 🔓"}
 
 @app.get("/elonlar/")
-def get_elonlar():
-    return elonlar_db
+async def get_elonlar():
+    cursor = elonlar_collection.find({}).sort("_id", -1) # Eng yangi e'lonlar tepada turadi
+    elonlar = await cursor.to_list(length=100)
+    # MongoDB id-sini o'chirib yuboramiz xato bermasligi uchun
+    for e in elonlar:
+        if "_id" in e:
+            del e["_id"]
+    return elonlar
 
 @app.post("/elonlar/yaratish/")
-def create_elon(elon: Elon):
-    elonlar_db.append(elon.dict())
-    save_data(ELONLAR_FILE, elonlar_db) # Faylga saqlash
+async def create_elon(elon: Elon):
+    new_elon = elon.dict()
+    await elonlar_collection.insert_one(new_elon) # MongoDB-ga saqlash
     return {"message": "Qo'shildi", "elon": elon}
