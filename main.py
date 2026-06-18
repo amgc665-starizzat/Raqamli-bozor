@@ -9,9 +9,9 @@ app = FastAPI(title="Raqamli Bozor API", description="E'lonlar va foydalanuvchil
 # ---- HAQIQIY O'CHMAS MONGODB BAZASIGA ULANISH ----
 MONGO_URL = "mongodb+srv://izzat:izzat2008@cluster0.o3bsglh.mongodb.net/?appName=Cluster0"
 client = AsyncIOMotorClient(MONGO_URL)
-db = client["raqamli_bozor_db"]  # Ma'lumotlar bazasi nomi
-users_collection = db["users"]    # Foydalanuvchilar jadvali
-elonlar_collection = db["elonlar"] # E'lonlar jadvali
+db = client["raqamli_bozor_db"]  
+users_collection = db["users"]    
+elonlar_collection = db["elonlar"] 
 
 class UserRegister(BaseModel):
     username: Any = None
@@ -48,9 +48,9 @@ def home_page():
             .input-group input, .input-group textarea { width: 100%; padding: 12px 16px; border: 1px solid #cccccc; border-radius: 8px; font-size: 15px; outline: none; }
             .input-group input:focus { border-color: #007bff; }
             
-            .password-wrapper { position: relative; display: flex; align-items: center; }
+            .password-wrapper { position: relative; display: flex; align-items: center; width: 100%; }
             .password-wrapper input { padding-right: 45px; }
-            .toggle-password { position: absolute; right: 15px; cursor: pointer; user-select: none; font-size: 18px; color: #666; }
+            .toggle-password { position: absolute; right: 15px; cursor: pointer; user-select: none; font-size: 18px; color: #666; z-index: 10; }
             
             button { width: 100%; padding: 12px; background: #007bff; border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 10px; }
             button:hover { background: #0056b3; }
@@ -63,8 +63,8 @@ def home_page():
             .toggle-link { text-align: center; margin-top: 20px; font-size: 14px; color: #007bff; cursor: pointer; text-decoration: underline; }
             
             .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
-            .elon-card { background: #f8f9fa; border: 1px solid #e9ecef; padding: 20px; border-radius: 12px; margin-bottom: 15px; }
-            .elon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+            .elon-card { background: #f8f9fa; border: 1px solid #e9ecef; padding: 20px; border-radius: 12px; margin-bottom: 15px; text-align: left; }
+            .elon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; width: 100%; }
             @media (max-width: 600px) { .elon-grid { grid-template-columns: 1fr; } }
             .price { font-weight: bold; color: #28a745; font-size: 18px; margin-top: 10px; }
         </style>
@@ -75,7 +75,7 @@ def home_page():
         <h2 id="formTitle">Ro'yxatdan O'tish</h2>
         
         <div class="input-group">
-            <label>Foydalanuvchi nomi</label>
+            <label>Foydalanuvchi nomi (Username)</label>
             <input type="text" id="username" placeholder="Masalan: qodirjon">
         </div>
         
@@ -149,6 +149,7 @@ def home_page():
             }
         }
 
+        // PAROL KO'ZCHASI ISHLASHI UCHUN FUNKSHIYA
         function togglePasswordVisibility() {
             const passwordInput = document.getElementById('password');
             const toggleIcon = document.querySelector('.toggle-password');
@@ -231,21 +232,30 @@ def home_page():
         }
 
         async function loadElonlar() {
-            const res = await fetch('/elonlar/');
-            const elonlar = await res.json();
-            const box = document.getElementById('elonlarRoʻyxati');
-            box.innerHTML = '';
-            
-            elonlar.forEach(e => {
-                box.innerHTML += `
-                    <div class="elon-card">
-                        <h5 style="font-size:16px; color:#333;">${e.sarlavha}</h5>
-                        <p style="font-size:14px; color:#666; margin: 5px 0;">${e.tavsif}</p>
-                        <div style="font-size:13px; color:#999;">📞 Tel: ${e.telefon}</div>
-                        <div class="price">${e.narx}</div>
-                    </div>
-                `;
-            });
+            try {
+                const res = await fetch('/elonlar/');
+                const elonlar = await res.json();
+                const box = document.getElementById('elonlarRoʻyxati');
+                box.innerHTML = '';
+                
+                if(elonlar.length === 0) {
+                    box.innerHTML = '<p style="color:#999; text-align:center;">Hozircha e'lonlar yo'q. Birinchi bo'lib e'lon joylang!</p>';
+                    return;
+                }
+
+                elonlar.forEach(e => {
+                    box.innerHTML += `
+                        <div class="elon-card">
+                            <h5 style="font-size:16px; color:#333; font-weight:600;">${e.sarlavha}</h5>
+                            <p style="font-size:14px; color:#666; margin: 6px 0;">${e.tavsif || ''}</p>
+                            <div style="font-size:13px; color:#555;">📞 Tel: ${e.telefon || ''}</div>
+                            <div class="price">${e.narx}</div>
+                        </div>
+                    `;
+                });
+            } catch (err) {
+                console.error("E'lonlarni yuklashda xato:", err);
+            }
         }
 
         async function addElon() {
@@ -255,28 +265,35 @@ def home_page():
             const telefon = document.getElementById('elonTel').value;
             const elonMsg = document.getElementById('elonMsg');
 
+            elonMsg.style.display = 'none';
+
             if(!sarlavha || !narx) {
                 elonMsg.innerText = "Sarlavha va narxni yozing!";
                 elonMsg.className = "message error";
                 return;
             }
 
-            const response = await fetch('/elonlar/yaratish/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sarlavha, tavsif, narx, telefon })
-            });
+            try {
+                const response = await fetch('/elonlar/yaratish/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sarlavha, tavsif, narx, telefon })
+                });
 
-            if (response.ok) {
-                elonMsg.innerText = "E'lon muvaffaqiyatli qo'shildi!";
-                elonMsg.className = "message success";
-                document.getElementById('elonSarlavha').value = '';
-                document.getElementById('elonTavsif').value = '';
-                document.getElementById('elonNarx').value = '';
-                document.getElementById('elonTel').value = '';
-                loadElonlar();
-            } else {
-                elonMsg.innerText = "Xato!";
+                if (response.ok) {
+                    elonMsg.innerText = "E'lon muvaffaqiyatli qo'shildi! ✨";
+                    elonMsg.className = "message success";
+                    document.getElementById('elonSarlavha').value = '';
+                    document.getElementById('elonTavsif').value = '';
+                    document.getElementById('elonNarx').value = '';
+                    document.getElementById('elonTel').value = '';
+                    loadElonlar();
+                } else {
+                    elonMsg.innerText = "E'lon qo'shishda xatolik yuz berdi.";
+                    elonMsg.className = "message error";
+                }
+            } catch (error) {
+                elonMsg.innerText = "Server bilan aloqa yo'q!";
                 elonMsg.className = "message error";
             }
         }
@@ -292,13 +309,12 @@ async def register_user(user: UserRegister):
     if not username_str:
         raise HTTPException(status_code=400, detail="Foydalanuvchi nomini yozing!")
     
-    # Bazadan qidirish
     existing_user = await users_collection.find_one({"username": username_str})
     if existing_user:
         raise HTTPException(status_code=400, detail="Bu foydalanuvchi nomi band!")
     
     new_user = {"username": username_str, "password": str(user.password), "telefon": user.telefon}
-    await users_collection.insert_one(new_user) # MongoDB-ga saqlash
+    await users_collection.insert_one(new_user) 
     return {"message": "Muvaffaqiyatli ro'yxatdan o'tdingiz! 🎉"}
 
 @app.post("/login")
@@ -313,9 +329,8 @@ async def login_user(user: UserLogin):
 
 @app.get("/elonlar/")
 async def get_elonlar():
-    cursor = elonlar_collection.find({}).sort("_id", -1) # Eng yangi e'lonlar tepada turadi
+    cursor = elonlar_collection.find({}).sort("_id", -1) 
     elonlar = await cursor.to_list(length=100)
-    # MongoDB id-sini o'chirib yuboramiz xato bermasligi uchun
     for e in elonlar:
         if "_id" in e:
             del e["_id"]
@@ -324,5 +339,5 @@ async def get_elonlar():
 @app.post("/elonlar/yaratish/")
 async def create_elon(elon: Elon):
     new_elon = elon.dict()
-    await elonlar_collection.insert_one(new_elon) # MongoDB-ga saqlash
+    await elonlar_collection.insert_one(new_elon) 
     return {"message": "Qo'shildi", "elon": elon}
