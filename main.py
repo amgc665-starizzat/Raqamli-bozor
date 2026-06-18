@@ -2,14 +2,34 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Any
+import json
+import os
 
 app = FastAPI(title="Raqamli Bozor API", description="E'lonlar va foydalanuvchilar platformasi")
 
-users_db = []
-elonlar_db = [
+# ---- BILANMA-KETIN MA'LUMOTLAR BAZASI (FAYLDA SAQLASH) ----
+USERS_FILE = "users_db.json"
+ELONLAR_FILE = "elonlar_db.json"
+
+def load_data(filename, default_value):
+    if os.path.exists(filename):
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return default_value
+    return default_value
+
+def save_data(filename, data):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# Ma'lumotlarni yuklab olish
+users_db = load_data(USERS_FILE, [])
+elonlar_db = load_data(ELONLAR_FILE, [
     {"sarlavha": "Chevrolet Gentra", "tavsif": "Yili 2023, holati a'lo, rangi oq", "narx": "13500", "telefon": "+998991234567"},
     {"sarlavha": "iPhone 15 Pro", "tavsif": "128GB, rangi Natural Titanium, yangi", "narx": "950", "telefon": "+998907654321"}
-]
+])
 
 class UserRegister(BaseModel):
     username: Any = None
@@ -46,13 +66,15 @@ def home_page():
             .input-group input, .input-group textarea { width: 100%; padding: 12px 16px; border: 1px solid #cccccc; border-radius: 8px; font-size: 15px; outline: none; }
             .input-group input:focus { border-color: #007bff; }
             
-            /* Parolni ko'rsatish ko'zchasi uchun dizayn */
             .password-wrapper { position: relative; display: flex; align-items: center; }
             .password-wrapper input { padding-right: 45px; }
             .toggle-password { position: absolute; right: 15px; cursor: pointer; user-select: none; font-size: 18px; color: #666; }
             
             button { width: 100%; padding: 12px; background: #007bff; border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 10px; }
             button:hover { background: #0056b3; }
+            .logout-btn { background: #dc3545; padding: 6px 12px; font-size: 14px; width: auto; margin-top: 0; }
+            .logout-btn:hover { background: #c82333; }
+            
             .message { margin-top: 15px; padding: 12px; border-radius: 8px; font-size: 14px; text-align: center; display: none; }
             .success { background: #d4edda; color: #155724; display: block; }
             .error { background: #f8d7da; color: #721c24; display: block; }
@@ -67,6 +89,7 @@ def home_page():
     </head>
     <body>
 
+    <!-- 1. KIRISH VA RO'YXATDAN O'TISH OYNASI -->
     <div class="container" id="authBox">
         <h2 id="formTitle">Ro'yxatdan O'tish</h2>
         
@@ -93,10 +116,15 @@ def home_page():
         <div class="toggle-link" id="toggleLink" onclick="toggleForm()">Sizda allaqachon profil bormi? Kirish</div>
     </div>
 
+    <!-- 2. ICHKARIDAGI ASOSIY BOZOR SAHIFASI -->
     <div class="main-page" id="marketPage">
         <div class="navbar">
             <h3>🚀 Raqamli Bozor Platformasi</h3>
-            <div>Salom, <span id="userDisplay" style="font-weight:bold; color:#007bff;"></span>!</div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div>Salom, <span id="userDisplay" style="font-weight:bold; color:#007bff;"></span>!</div>
+                <!-- Akkauntdan chiqish tugmasi -->
+                <button class="logout-btn" onclick="logout()">Chiqish 🚪</button>
+            </div>
         </div>
 
         <div class="elon-grid">
@@ -132,17 +160,27 @@ def home_page():
     <script>
         let isRegisterMode = true;
 
-        // Parolni ko'rsatish/yashirish funksiyasi
+        // --- AKKAUNTNI ESDAN CHIQARMAYDIGAN QILISH (AVTO-LOGIN) ---
+        window.onload = function() {
+            const savedUser = localStorage.getItem('activeUser');
+            if (savedUser) {
+                // Agar foydalanuvchi avval kirgan bo'lsa, to'g'ridan-to'g'ri ichkariga o'tkazish
+                document.getElementById('authBox').style.display = 'none';
+                document.getElementById('marketPage').style.display = 'block';
+                document.getElementById('userDisplay').innerText = savedUser;
+                loadElonlar();
+            }
+        }
+
         function togglePasswordVisibility() {
             const passwordInput = document.getElementById('password');
             const toggleIcon = document.querySelector('.toggle-password');
-            
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
-                toggleIcon.innerText = '🙈'; // Yashirish belgisi
+                toggleIcon.innerText = '🙈';
             } else {
                 passwordInput.type = 'password';
-                toggleIcon.innerText = '👁️'; // Ko'rsatish belgisi
+                toggleIcon.innerText = '👁️';
             }
         }
 
@@ -188,6 +226,9 @@ def home_page():
                     msgBox.innerText = result.message;
                     msgBox.classList.add('success');
                     
+                    // Brauzer xotirasiga foydalanuvchini yozib qo'yamiz (Akkauntdan chiqib ketmaydi)
+                    localStorage.setItem('activeUser', username);
+                    
                     setTimeout(() => {
                         document.getElementById('authBox').style.display = 'none';
                         document.getElementById('marketPage').style.display = 'block';
@@ -202,6 +243,16 @@ def home_page():
                 msgBox.innerText = "Server xatosi!";
                 msgBox.classList.add('error');
             }
+        }
+
+        // AKKAUNTDAN CHIQISH FUNKSIYASI
+        function logout() {
+            localStorage.removeItem('activeUser'); // Xotirani tozalash
+            document.getElementById('marketPage').style.display = 'none';
+            document.getElementById('authBox').style.display = 'block';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('msgBox').style.display = 'none';
         }
 
         async function loadElonlar() {
@@ -261,7 +312,9 @@ def register_user(user: UserRegister):
     for u in users_db:
         if str(u["username"]).strip().lower() == username_str.lower():
             raise HTTPException(status_code=400, detail="Bu foydalanuvchi nomi band!")
+    
     users_db.append({"username": user.username, "password": str(user.password), "telefon": user.telefon})
+    save_data(USERS_FILE, users_db) # Faylga saqlash
     return {"message": "Muvaffaqiyatli ro'yxatdan o'tdingiz! 🎉"}
 
 @app.post("/login")
@@ -284,4 +337,5 @@ def get_elonlar():
 @app.post("/elonlar/yaratish/")
 def create_elon(elon: Elon):
     elonlar_db.append(elon.dict())
+    save_data(ELONLAR_FILE, elonlar_db) # Faylga saqlash
     return {"message": "Qo'shildi", "elon": elon}
